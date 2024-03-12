@@ -425,7 +425,7 @@ class MAREN_standalone:
 
         return mat_xs_library
 
-    def predict_fewgroup_fuelpin_geometry_xslibraries(self, fuelpellet_nuclide_concentrations, instantaneous_state_parameters, bh2o_nuclide_concentrations, fewgroup_bin_edge_index=[40]) -> dict:
+    def predict_fewgroup_xslibraries(self, fuelpellet_nuclide_concentrations, instantaneous_state_parameters, bh2o_nuclide_concentrations, fewgroup_bin_edge_index=[40]) -> dict:
         '''Similar to predict_multigroup_fuelpin_geometry_xslibraries() method, but use fuel flux to collapse fuel pellet cross-section libraries and use bh2o flux to collapse the rest
 
         fewgroup_bin_edge_index : list of integers
@@ -433,9 +433,9 @@ class MAREN_standalone:
 
         '''
 
-        fuel_flux, bh2o_flux = self.flux.output(X=np.concatenate([fuelpellet_nuclide_concentrations, instantaneous_state_parameters, bh2o_nuclide_concentrations]))
+        fuel_flux, bh2o_flux = self.flux.output(fuelpellet_nuclide_concentrations, instantaneous_state_parameters)
 
-        mgxs = self.predict_multigroup_fuelpin_geometry_xslibraries(fuelpellet_nuclide_concentrations, instantaneous_state_parameters, bh2o_nuclide_concentrations)
+        mgxs = self.predict_multigroup_xslibraries(fuelpellet_nuclide_concentrations, instantaneous_state_parameters, bh2o_nuclide_concentrations)
 
         fgxs = {}
         for mat in ['fuel','he','zirc4','bh2o','air','ss','b4c']:
@@ -447,13 +447,13 @@ class MAREN_standalone:
 
             for xs in mgxs[mat].keys():
                 if xs != 'chi':
-                    fgxs[mat][xs] == self.collapse_multigroup_to_fewgroup(mgxs[mat][xs], weighting_flux, fewgroup_bin_edge_index)
+                    fgxs[mat][xs] = self.collapse_multigroup_to_fewgroup(mgxs[mat][xs], weighting_flux, fewgroup_bin_edge_index)
                 else:
-                    fgxs[mat][xs] == self.collapse_chi_to_fewgroup(mgxs[mat][xs], fewgroup_bin_edge_index)
+                    fgxs[mat][xs] = self.collapse_chi_to_fewgroup(mgxs[mat][xs], fewgroup_bin_edge_index)
 
-        return fgxs
+        return fgxs, fuel_flux, bh2o_flux
 
-    def collapse_multigroup_to_fewgroup(xs:np.ndarray, weighting_flux:np.ndarray, fewgroup_bin_edge_index=[40]):
+    def collapse_multigroup_to_fewgroup(self, xs:np.ndarray, weighting_flux:np.ndarray, fewgroup_bin_edge_index=[40]):
         '''Collapse multigroup libraries to fewgroup libraries using weighting flux 
 
         Parameters
@@ -502,7 +502,7 @@ class MAREN_standalone:
 
             return fgXS
 
-    def collapse_chi_to_fewgroup(chi:np.ndarray,fewgroup_bin_edge_index=[40] ):
+    def collapse_chi_to_fewgroup(self, chi:np.ndarray,fewgroup_bin_edge_index=[40] ):
         fewgroup_bin_edge_index = np.array(fewgroup_bin_edge_index, dtype=int)
         fewgroup_bin_edge_index = np.insert(fewgroup_bin_edge_index, 0, 0)
         fewgroup_bin_edge_index = np.append(fewgroup_bin_edge_index, len(chi))
@@ -703,13 +703,12 @@ class Fuel:
         xs_library = {} 
 
         # total and fission cross-sections
-        for xs in ['total','fission']:
+        for xs in ['fission','total']:
 
             if return_microxs == True:
                 micro_xs = np.zeros((self.fuelpellet_reconstruction_nuclide_list + 1, 56))
 
             macro_xs = np.zeros(56)
-
 
             # load tensorflow model
             dnn = tf.keras.models.load_model(f'{self.maren_standalone.savedir}/fuel/DNN_{xs}')
@@ -1119,9 +1118,9 @@ class Flux:
 
         Returns
         -------
-        fuel_flux : np.ndarray (56,)
+        fuel_flux : np.ndarray (56,) note: units are 1/cm2-s (converting to 1/cm2-s-eV i.e. dividing by energy bin width, can be done by np.diff(MAREN_standalone.scale_56group_library()) )
 
-        bh2o_flux : np.ndarray (56,)
+        bh2o_flux : np.ndarray (56,) note: units are 1/cm2-s
         
         '''
 
@@ -1156,9 +1155,11 @@ class Flux:
 
 def forwardpass_dnn(input:np.ndarray, dnn:tf.keras.Model, min_output:np.ndarray, max_output:np.ndarray, output_normalizer:Znormalize):
 
-    ldcoeff = dnn.predict(input[np.newaxis,:], verbose=0).flatten()
+    # note: use __call__ instead of dnn.predict() in-order to avoid re-tracing warning (see also: https://www.tensorflow.org/guide/function#controlling_retracing), if dnn.predict method is preferred, use the following:
+    # ldcoeff = dnn.predict(input[np.newaxis,:], verbose=0).flatten()
+    ldcoeff = dnn(input[np.newaxis,:]).numpy().flatten()
     
-    ldcoeff = output_normalizer.input(ldcoeff)
+    ldcoeff = output_normalizer.output(ldcoeff)
 
     for i in range(len(ldcoeff)):
         ldcoeff[i] = np.clip(ldcoeff[i], min_output[i], max_output[i])
