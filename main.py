@@ -100,6 +100,33 @@ def example_generate_xs_library():
     print(f'\nFuel pellet fission and total cross-section values:\n Group 0 - Highest energy, Group 55 - Lowest energy')
     print(tabulate.tabulate(tabular_data=tabular_data, headers=['Group','Fission XS', 'Total XS', 'nu','chi'], floatfmt='1.6e', tablefmt='simple_grid'))
 
+    # plot the fission and total cross-section values for the fuel pellet 
+    fig = plt.figure()
+    plt.plot(mgxs['fuel']['fission'], label='fission')
+    plt.plot(mgxs['fuel']['total'], label='total')
+    plt.xlabel('Energy group index [-]')
+    plt.ylabel(r'$\Sigma$ [1/cm]')
+    plt.yscale('log')
+    plt.title(f'Fuel pellet macroscopic xs')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig('sample_fuelpellet_macroscopic_xs.png')
+    plt.close()
+
+    # plot the total cross-sections for bh2o, zirc4 and b4c
+    fig = plt.figure()
+    for mat in ['bh2o', 'zirc4', 'b4c']:
+        plt.plot(mgxs[mat]['total'],label=mat)
+    plt.xlabel('Energy group index [-]')
+    plt.ylabel(r'$\Sigma$ [1/cm]')
+    plt.yscale('log')
+    plt.title(f'Material total macroscopic xs')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig('sample_materials_macroscopic_xs.png')
+    plt.close()
+    
+
     # spy plot scattering matrix as a spy plot to verify that most off-diagonal elements are 0. p0scatter[i,j] represents the nu-scattering value from energy group i to energy group j
     scatter_spy = plt.spy(mgxs['fuel']['p0scatter'], marker='o', markersize=3)
     plt.ylabel('Incident neutron energy index [-]')
